@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Drop Simulator</title>
+  <link rel="stylesheet" href="./style.css"/>
+</head>
+<body>
+  <div class="container">
+    <h1>Drop Simulator</h1>
+    <div class="controls">
+      <label>
+        Boss:
+        <select id="bossSelect">
+            <option value="">-- Select a boss --</option>
+            <option value="Araxxi">Araxxi</option>
+            <option value="Arch-Glacor">Arch Glacor</option>
+            <option value="The_Ambassador">The Ambassador</option>
+            <option value="Astellarn">Astellarn</option>
+            <option value="Beastmaster_Durzag">Beastmaster Durzag</option>
+            <option value="Black_Stone_Dragon">Black Stone Dragon</option>
+            <option value="Commander_Zilyana">Commander Zilyana</option>
+            <option value="Corporeal_Beast">Corporeal Beast</option>
+            <option value="Crassian_Leviathan">Crassian Leviathan</option>
+            <option value="Croesus">Croesus</option>
+            <option value="Daggonoth_Kings">Daggonoth Kings</option>
+            <option value="General_Graardor">General Graardor</option>
+            <option value="Giant_Mole">Giant Mole</option>
+            <option value="Gregorovich">Gregorovic</option>
+            <option value="Har-Aken">Har-Aken</option>
+            <option value="Helwyr">Helwyr</option>
+            <option value="Hermod,_the_Spirit_of_War">Hermod, the Spirit of War</option>
+            <option value="Kalphite_King">Kalphite King</option>
+            <option value="Kalphite_Queen">Kalphite Queen</option>
+            <option value="Kerapac,_the_bound">Kerapac, the bound</option>
+            <option value="Kezalam,_the_Wanderer">Kezalam, the Wanderer</option>
+            <option value="King_Black_Dragon">King Black Dragon</option>
+            <option value="Kree'arra">Kree'arra</option>
+            <option value="K'ril_Tsutsaroth">K'ril Tsutsaroth</option>
+            <option value="Legio_Primis">Legion Primis</option>
+            <option value="Legio_Quartus">Legion Quartus</option>
+            <option value="Legio_Quintus">Legion Quintus</option>
+            <option value="Legio_Secundus">Legion Secundus</option>
+            <option value="Legio_Sextus">Legion Sextus</option>
+            <option value="Legio_Tertius">Legion Tertius</option>
+            <option value="Masuta_the_Ascended">Masuta the Ascended</option>
+            <option value="Nakatra,_Devourer_Eternal">Nakatra, Devourer Eternal</option>
+            <option value="Nex">Nex</option>
+            <option value="Nex,_Angel_of_Death">Nex: Angel of Death</option>
+            <option value="Osseous">Rex M. Osseous</option>
+            <option value="Orikalka">Rex M. Orikalka</option>
+            <option value="Pthentraken">Rex M. Pthentraken</option>
+            <option value="Rathis">Rex M. Rathis</option>
+            <option value="Raksha,_the_Shadow_Colossus">Raksha, the Shadow Colossus</option>
+            <option value="Rasial,_the_First_Necromancer">Rasial, the First Necromancer</option>
+            <option value="Rise_of_the_Six">Rise of the Six</option>
+            <option value="Seiryu_the_Azure_Serpent">Seiryu the Azure Serpent</option>
+            <option value="Solak,_Guardian_of_the_Grove">Solak, Guardian of the Grove</option>
+            <option value="Taraket_the_Necromancer">Taraket the Necromancer</option>
+            <option value="Telos">Telos</option>
+            <option value="The_Barrows_Brothers">The Barrows Brothers</option>
+            <option value="The_Chaos_Elemental">The Chaos Elemental</option>
+            <option value="The_Gate_of_Elidinis">The Gate of Elidinis</option>
+            <option value="The_Magister">The Magister</option>
+            <option value="The_Queen_Black_Dragon">The Queen Black Dragon</option>
+            <option value="The_Sanctum_Guardian">The Sanctum Guardian</option>
+            <option value="The_Twin_Furies">The Twin Furies</option>
+            <option value="TzKal-Zuk">TzKal-Zuk</option>
+            <option value="TzTok-Jad">TzTok-Jad</option>
+            <option value="Verak_Lith">Verak Lith</option>
+            <option value="Vermyx,_Brood_Mother">Vermyx, Brood Mother</option>
+            <option value="Vindicta_&_Gorvek">Vindicta and Gorvek</option>
+            <option value="Vorago">Vorago</option>
+            <option value="Yakamaru">Yakamaru</option>
+            <option value="Zamorak,_Lord_of_Chaos">Zamorak, Lord of Chaos</option>
+            <option value="Zemouregal_&_Vorkath">Zemouregal and Vorkath</option>            
+          </select>
+      </label>
+      <label>
+        Enrage:
+        <input id="enrageInput" type="number" min="0" max="300" value="0"> %
+      </label>
+      <label>
+        Number of Kills:
+        <input id="kills" type="number" min="0" value="0"/>
+      </label>
+      <button id="simulate">Simulate</button>
+
+      <label>
+        <input id="autoKillToggle" type="checkbox"/>
+        Auto Kill
+      </label>
+      <button id="reset">Reset</button>
+
+      <label id="wildernessToggleContainer" style="display:none;">
+        <input id="wildernessToggle" type="checkbox"/>
+        Include Wilderness Drops
+      </label>
+
+      <label id="slayerTaskContainer" style="display:none;">
+        <input id="slayerTaskToggle" type="checkbox"/>
+        On Slayer Task
+      </label>
+    </div>
+
+    <div id="sumGE">Total GE Value: 0 coins</div>
+    <div id="tablesContainer"></div>
+  </div>
+
+  <div id="tooltip" style="
+      position:fixed;
+      display:none;
+      padding:4px 8px;
+      background:rgba(0,0,0,0.8);
+      color:white;
+      border-radius:4px;
+      font-size:0.9em;
+      pointer-events:none;
+    "></div>
+
+  <script type="module" src="./dropSimulator.js"></script>
+</body>
+</html>

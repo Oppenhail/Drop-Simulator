@@ -1,0 +1,122 @@
+body {
+  font-family: sans-serif;
+  background: #f4f4f4;
+  margin: 0;
+  padding: 1rem;
+}
+
+/* style.css */
+
+/* center the controls bar and the summary line */
+.container .controls,
+#sumGE {
+  text-align: center;
+  margin: 0 auto 1rem;
+}
+
+/* lay out your controls neatly */
+.container .controls {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+
+/* Optional: make the table narrower and centered too */
+#results {
+  margin: 0 auto;
+}
+
+.container {
+  max-width: 900px;
+  margin: auto;
+  background: #fff;
+  padding: 1rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+h1 {
+  text-align: center;
+}
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.controls label, .controls button {
+  margin: 0.25rem 0;
+}
+.controls input[type="number"] {
+  width: 100px;
+}
+.controls button {
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th, td {
+  border: 1px solid #ddd;
+  padding: 0.5rem;
+  text-align: left;
+}
+th {
+  background: #eee;
+}
+.icon {
+  width: 20px;
+  height: 20px;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+/* Column-hide rules */
+#results.hide-rate th.col-rate,
+#results.hide-rate td.col-rate {
+  display: none;
+}
+#results.hide-ge th.col-ge,
+#results.hide-ge td.col-ge {
+  display: none;
+}
+/* Floating tooltip */
+#tooltip {
+  position: fixed;
+  pointer-events: none;
+  background: rgba(0,0,0,0.8);
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.9em;
+  z-index: 1000;
+  white-space: nowrap;
+  display: none;
+}
+
+.charmqty {
+  pointer-events: none;
+  position: absolute;
+  margin-top: -7px;
+  margin-left: -31px;
+  font-weight: 400;
+  font-family: 'RuneScape Small';
+  color: yellow;
+  font-size: 16px;
+  text-shadow: #000 1px 1px;
+  z-index: 10;
+}
+.charm-container {
+  position: relative;
+  display: inline-block;
+}
+.drop-icon {
+  max-width: 27px;
+  max-height: 27px;
+  vertical-align: middle;
+}
+
+
+
+
