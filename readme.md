@@ -28,11 +28,11 @@
 - Use of Alt+1 key when right clicking a monster in-game to search wiki for the name eg, /w/{al1+1}
 
 # Boss Drop Explanations:
-    & Add a "Luck of the Dwarves" toggle which grants a +1% increase only in the total sum added at the top of the page
+    [x] & Add a "Luck of the Dwarves" toggle which grants a +1% increase only in the total sum added at the top of the page
 
-    & Crystal_triskelion_ on any loot table are dropped in order, eg. _fragment_1, then the next is _fragment_2, and finally _fragment_3, then going back to _fragment_1 as the next drop
+    [x] & Crystal_triskelion_ on any loot table are dropped in order, eg. _fragment_1, then the next is _fragment_2, and finally _fragment_3, then going back to _fragment_1 as the next drop
 
-    & Drops with a x b/c is calculated by a = number of drops per kill and b/c is the ratio at which the chance is per drop and per kill, eg."Rarity"/"Drop Rate" 7 x 1/2448 means there's a possibility to have a total of 7 loots/drops per kill with a 1/2448 chance to recieve that item per loot/drop.
+    [x] & Drops with a x b/c is calculated by a = number of drops per kill and b/c is the ratio at which the chance is per drop and per kill, eg."Rarity"/"Drop Rate" 7 x 1/2448 means there's a possibility to have a total of 7 loots/drops per kill with a 1/2448 chance to recieve that item per loot/drop.
 
     & Some Group bosses have drop chance alterations based on the number of people in the kill, this includes:
         Araxxi
@@ -40,7 +40,7 @@
         Arch_Glacor
 
 
-    - The_Ambassador (Floor 3) # done with explanation
+    - The_Ambassador
             + Umbral urn has a base drop rate of 1/300 (solo encounters), 1/1000 (duo encounters), or 1/1,500 (trio encounters), with a threshold of 60 for solo encounters, 200 for duo and 300 for trio encounters
                 - So we will need to alter the table layout to include 5 sections split into:
                     ` Dungeon drop table

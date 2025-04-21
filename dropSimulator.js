@@ -1,39 +1,33 @@
 // dropSimulator.ts
-// ─── Globals ─────────────────────────────────────────────────────────────────
-const bossData = {};
-let currentCounts = [];
-let activeDrops = [];
-let activeProbs = [];
-let autoKillTimer = null;
-let triskelionGroup = [];
-let triskelionCycle = 0;
-const bossSelect = document.getElementById('bossSelect');
-const killsInput = document.getElementById('kills');
-const sumEl = document.getElementById('sumGE');
-const tooltip = document.getElementById('tooltip');
-const slayerTaskToggle = document.getElementById('slayerTaskToggle');
-const slayerTaskContainer = document.getElementById('slayerTaskContainer');
-const wildernessToggle = document.getElementById('wildernessToggle');
-const wildernessToggleContainer = document.getElementById('wildernessToggleContainer');
-const luckToggle = document.getElementById('luckToggle');
-// ─── Add “Add Monster…” option to the dropdown ───────────────────────────────
+// ─── Constants ───────────────────────────────────────────────────────────────
+const AUTO_KILL_INTERVAL_MS = 20;
+const LUCK_BUFF_MULT = 1.01;
+// ─── DOM Helper ───────────────────────────────────────────────────────────────
+function $(id) {
+    const el = document.getElementById(id);
+    if (!el)
+        throw new Error(`Missing element #${id}`);
+    return el;
+}
+// ─── Globals & DOM Elements ───────────────────────────────────────────────────
+const bossData = {}; // <--- Added missing declaration
+const bossSelect = $('bossSelect');
+const killsInput = $('kills');
+const sumEl = $('sumGE');
+const tooltip = $('tooltip');
+const slayerTaskToggle = $('slayerTaskToggle');
+const slayerTaskContainer = $('slayerTaskContainer');
+const wildernessToggle = $('wildernessToggle');
+const wildernessToggleContainer = $('wildernessToggleContainer');
+const luckToggle = $('luckToggle');
+const simulateBtn = $('simulate');
+const autoKillToggle = $('autoKillToggle');
+const resetBtn = $('reset');
+const tablesContainer = $('tablesContainer');
+// Add “Add Monster…” option to the dropdown
 const addOpt = new Option("+ Add Monster...", "__add");
 bossSelect.add(addOpt);
-// ─── Fetch & Parse ────────────────────────────────────────────────────────────
-async function fetchDrops(page) {
-    if (bossData[page])
-        return;
-    const url = `https://runescape.wiki/api.php?action=parse&format=json`
-        + `&page=${encodeURIComponent(page)}&prop=text&onlypst=1&formatversion=2`;
-    const resp = await fetch(url);
-    const data = await resp.json();
-    bossData[page] = parseDropsFromHTML(data.parse.text);
-    for (const cat of ['normal', 'wilderness']) {
-        for (const d of bossData[page][cat]) {
-            d.rateParts = d.rateParts.map(normalizeRatePart);
-        }
-    }
-}
+// ─── Parser Utilities ─────────────────────────────────────────────────────────
 function normalizeRatePart(raw) {
     let s = raw.replace(/\u00A0/g, ' ')
         .replace(/\s+/g, ' ')
@@ -63,13 +57,49 @@ function normalizeRatePart(raw) {
         return '1/100';
     return s;
 }
+function parseRate(rt) {
+    const c = rt.replace(/\[.*?\]/g, '').replace(/,/g, '').trim().toLowerCase();
+    if (c === 'always')
+        return 1;
+    const p = c.match(/^([\d.]+)%$/);
+    if (p)
+        return parseFloat(p[1]) / 100;
+    const f = c.match(/^(\d+)\/(\d+)$/);
+    if (f)
+        return +f[1] / +f[2];
+    return 0;
+}
+function parseNumber(s) {
+    return parseInt(s.replace(/[, ]+/g, ''), 10) || 0;
+}
+function parseGEPrice(s) {
+    const parts = s.split('–').map(str => parseInt(str.replace(/[, ]+/g, ''), 10) || 0);
+    return { min: parts[0], max: parts[1] ?? parts[0] };
+}
+// ─── Fetch & Parse ────────────────────────────────────────────────────────────
+async function fetchDrops(page) {
+    if (bossData[page])
+        return;
+    const url = `https://runescape.wiki/api.php?action=parse&format=json`
+        + `&page=${encodeURIComponent(page)}&prop=text&onlypst=1&formatversion=2`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    bossData[page] = parseDropsFromHTML(data.parse.text);
+    ['normal', 'wilderness'].forEach(cat => {
+        bossData[page][cat].forEach(d => {
+            d.rateParts = d.rateParts.map(normalizeRatePart);
+        });
+    });
+}
 function findDropsHeading(doc) {
     return Array.from(doc.querySelectorAll('span.mw-headline'))
         .find(h => /drops?|loot/i.test(h.textContent || '')) || null;
 }
 function parseDropsFromHTML(html) {
     const doc = new DOMParser().parseFromString(html, 'text/html');
-    const normal = [], gemRare = [], wilderness = [];
+    const normal = [];
+    const gemRare = [];
+    const wilderness = [];
     const heading = findDropsHeading(doc);
     if (!heading)
         return { normal, gemRare, wilderness };
@@ -87,16 +117,17 @@ function parseDropsFromHTML(html) {
         }
         if (node.tagName === 'TABLE') {
             const tbl = node;
-            if (tbl.dataset.schema === 'charms')
+            if (tbl.dataset.schema === 'charms') {
                 extractCharmsTable(tbl, { normal, gemRare, wilderness }[cat]);
-            else
+            }
+            else {
                 extractTable(tbl, { normal, gemRare, wilderness }[cat]);
+            }
         }
         node = node.nextElementSibling;
     }
     return { normal, gemRare, wilderness };
 }
-// ─── Table Extractors ─────────────────────────────────────────────────────────
 function extractTable(tbl, out) {
     tbl.querySelectorAll('tr').forEach((row, i) => {
         if (i === 0)
@@ -111,40 +142,34 @@ function extractTable(tbl, out) {
             return;
         if (/loot table|drop table/i.test(name))
             return;
-        // ─── 1) parse the quantity column exactly once ─────────────────────────
-        let qtyMin, qtyMax;
-        const qtxt = tds[2].textContent.trim(); // e.g. "35–45" or "20"
+        let qtyMin;
+        let qtyMax;
+        const qtxt = tds[2].textContent.trim();
         const qm = qtxt.match(/^(\d+)(?:[–-](\d+))?$/);
         if (qm) {
             qtyMin = parseInt(qm[1], 10);
             qtyMax = qm[2] ? parseInt(qm[2], 10) : qtyMin;
         }
-        // ─── 2) force coins → always exactly 1 per drop event ─────────────────
         let qtyPerDrop;
-        if (/^Coins\b/i.test(name)) {
+        if (/^Coins\b/i.test(name))
             qtyPerDrop = 1;
-        }
-        // ─── 3) grab the icon URL ───────────────────────────────────────────────
         const imgEl = tds[0].querySelector('img');
         let icon;
         if (imgEl) {
             const src = imgEl.getAttribute('src');
             icon = src.startsWith('http') ? src : 'https://runescape.wiki' + src;
         }
-        // ─── 4) pull & fallback the raw drop‐rate text ──────────────────────────
         let raw = tds[3].textContent.trim()
             .split('–')[0].split('-')[0]
             .replace(/\[.*?\]/g, '').trim();
-        // … your existing textual‐fallbacks here (Always, very rare, etc.) …
-        // ─── 5) build the RawDrop object ───────────────────────────────────────
         out.push({
             name,
             rateParts: raw.split(';').map(p => p.trim()),
             gePrice: tds[4].textContent.trim(),
-            icon, // for the picture
-            qtyPerDrop, // fixed quantity (coins or charms)
-            qtyMin, // lower end of the range
-            qtyMax // upper end
+            icon,
+            qtyPerDrop,
+            qtyMin,
+            qtyMax
         });
     });
 }
@@ -167,14 +192,13 @@ function extractCharmsTable(tbl, out) {
         }
         return { name, iconUrl, qtyPerDrop: qty };
     });
-    let idx = rows.indexOf(headerRow) + 1, dataRow;
-    while (idx < rows.length) {
-        const tds = rows[idx].querySelectorAll('td');
+    let dataRow;
+    for (let i = rows.indexOf(headerRow) + 1; i < rows.length; i++) {
+        const tds = rows[i].querySelectorAll('td');
         if (tds.length >= charms.length) {
-            dataRow = rows[idx];
+            dataRow = rows[i];
             break;
         }
-        idx++;
     }
     if (!dataRow)
         return;
@@ -204,126 +228,101 @@ function extractCharmsTable(tbl, out) {
         });
     });
 }
-// ─── Utils ────────────────────────────────────────────────────────────────────
-function parseRate(rt) {
-    const c = rt.replace(/\[.*?\]/g, '').replace(/,/g, '').trim().toLowerCase();
-    if (c === 'always')
-        return 1;
-    const p = c.match(/^([\d.]+)%$/);
-    if (p)
-        return parseFloat(p[1]) / 100;
-    const f = c.match(/^(\d+)\/(\d+)$/);
-    if (f)
-        return +f[1] / +f[2];
-    return 0;
-}
-function parseNumber(s) {
-    return parseInt(s.replace(/[, ]+/g, ''), 10) || 0;
-}
-// ─── Utils ────────────────────────────────────────────────────────────────────
-/**
- * q       = total items you’ve accumulated
- * p       = GE price string (e.g. "222 400" or "Not sold")
- * perDrop = the number of items dropped per roll (e.g. 40 for Hydrix bolt tips)
- * min/max = the min/max for ranged drops (if any)
- */
-function computeTooltip(d, q) {
-    // parse the same way: price or range?
-    let minPrice, maxPrice;
-    if (d.gePrice.includes('–')) {
-        [minPrice, maxPrice] = d.gePrice.split('–').map(parseNumber);
+// ─── Simulator Class ─────────────────────────────────────────────────────────
+class DropSimulator {
+    constructor() {
+        this.counts = [];
+        this.drops = [];
+        this.probs = [];
+        this.triskelionGroup = [];
+        this.triskelionCycle = 0;
+        this.killLoopId = null;
     }
-    else {
-        minPrice = maxPrice = parseNumber(d.gePrice);
+    loadDrops(drops) {
+        this.drops = drops;
+        this.counts = drops.map(() => 0);
+        this.probs = drops.map(d => parseRate(d.rateParts.length > 1 && slayerTaskToggle.checked
+            ? d.rateParts[1]
+            : d.rateParts[0]));
+        this.triskelionGroup = drops
+            .map((d, i) => /^Crystal[\s_]triskelion[\s_]fragment/i.test(d.name) ? i : -1)
+            .filter(i => i >= 0);
+        this.triskelionCycle = 0;
     }
-    // items per drop
-    const perDrop = d.qtyPerDrop != null
-        ? d.qtyPerDrop
-        : (d.qtyMin != null ? d.qtyMin : 1);
-    // price per one item
-    const unitMin = minPrice / perDrop;
-    const unitMax = maxPrice / perDrop;
-    // total for q items
-    const totalMin = Math.round(unitMin * q);
-    const totalMax = Math.round(unitMax * q);
-    if (totalMin === totalMax) {
-        return `Total: ${totalMin.toLocaleString()} coins`;
-    }
-    else {
-        return `Total: ${totalMin.toLocaleString()}–${totalMax.toLocaleString()} coins`;
-    }
-}
-// ─── Auto‑kill Helpers ────────────────────────────────────────────────────────
-function simulateOneKill() {
-    // triskelion cycling:
-    if (triskelionGroup.length) {
-        const idx0 = triskelionGroup[0];
-        const p = activeProbs[idx0];
-        if (Math.random() < p) {
-            const which = triskelionGroup[triskelionCycle % triskelionGroup.length];
-            const d = activeDrops[which];
-            const qty = d.qtyPerDrop ?? (d.qtyMin !== undefined && d.qtyMax !== undefined
-                ? d.qtyMin + Math.floor(Math.random() * (d.qtyMax - d.qtyMin + 1))
-                : 1);
-            currentCounts[which] += qty;
-            triskelionCycle++;
-        }
-    }
-    activeProbs.forEach((p, i) => {
-        if (triskelionGroup.includes(i))
-            return;
-        if (Math.random() < p) {
-            const d = activeDrops[i];
-            let qty = d.qtyPerDrop ?? 1;
-            if (d.qtyMin !== undefined && d.qtyMax !== undefined) {
-                qty = d.qtyMin + Math.floor(Math.random() * (d.qtyMax - d.qtyMin + 1));
+    simulateOneKill() {
+        if (this.triskelionGroup.length) {
+            const idx0 = this.triskelionGroup[0];
+            const p = this.probs[idx0];
+            if (Math.random() < p) {
+                const which = this.triskelionGroup[this.triskelionCycle % this.triskelionGroup.length];
+                const d = this.drops[which];
+                const qty = d.qtyPerDrop != null
+                    ? d.qtyPerDrop
+                    : (d.qtyMin != null && d.qtyMax != null
+                        ? d.qtyMin + Math.floor(Math.random() * (d.qtyMax - d.qtyMin + 1))
+                        : 1);
+                this.counts[which] += qty;
+                this.triskelionCycle++;
             }
-            currentCounts[i] += qty;
         }
-    });
-}
-function prepareAndSimulate(base) {
-    currentCounts = base.map(() => 0);
-    triskelionCycle = 0;
-    const kills = +killsInput.value || 0;
-    const probs = base.map(d => parseRate(d.rateParts.length > 1 && slayerTaskToggle.checked
-        ? d.rateParts[1]
-        : d.rateParts[0]));
-    for (let k = 0; k < kills; k++) {
-        simulateOneKill();
+        this.probs.forEach((p, i) => {
+            if (this.triskelionGroup.includes(i))
+                return;
+            if (Math.random() < p) {
+                const d = this.drops[i];
+                let qty = d.qtyPerDrop ?? 1;
+                if (d.qtyMin != null && d.qtyMax != null) {
+                    qty = d.qtyMin + Math.floor(Math.random() * (d.qtyMax - d.qtyMin + 1));
+                }
+                this.counts[i] += qty;
+            }
+        });
     }
+    simulateBatch(kills) {
+        for (let i = 0; i < kills; i++) {
+            this.simulateOneKill();
+        }
+    }
+    startAutoKill() {
+        if (this.killLoopId != null)
+            return;
+        this.killLoopId = window.setInterval(() => {
+            killsInput.value = String((+killsInput.value || 0) + 1);
+            this.simulateOneKill();
+            updateUI();
+        }, AUTO_KILL_INTERVAL_MS);
+    }
+    stopAutoKill() {
+        if (this.killLoopId != null) {
+            clearInterval(this.killLoopId);
+            this.killLoopId = null;
+        }
+    }
+    getCounts() { return this.counts; }
+    getDrops() { return this.drops; }
 }
-/**
-* Returns [minValue, maxValue] in coins, for this drop `d` and count `q`.
-*/
+// ─── Tooltip & Value Helpers ─────────────────────────────────────────────────
+function computeTooltip(d, q) {
+    const { min, max } = parseGEPrice(d.gePrice);
+    const perDrop = d.qtyPerDrop != null ? d.qtyPerDrop : (d.qtyMin ?? 1);
+    const totalMin = Math.round((min / perDrop) * q);
+    const totalMax = Math.round((max / perDrop) * q);
+    return totalMin === totalMax
+        ? `Total: ${totalMin.toLocaleString()} coins`
+        : `Total: ${totalMin.toLocaleString()}–${totalMax.toLocaleString()} coins`;
+}
 function computeValue(d, q) {
-    // 1) parse the GE‐price or range
-    let minPrice, maxPrice;
-    if (d.gePrice.includes('–')) {
-        const [a, b] = d.gePrice.split('–').map(parseNumber);
-        minPrice = a;
-        maxPrice = b;
-    }
-    else {
-        minPrice = maxPrice = parseNumber(d.gePrice);
-    }
-    // 2) figure out “items per drop”
-    //    - for charms/coins you forced qtyPerDrop=1 (or >1)
-    //    - for ranged drops you parsed qtyMin/qtyMax
-    const perDrop = d.qtyPerDrop != null
-        ? d.qtyPerDrop
-        : (d.qtyMin != null ? d.qtyMin : 1);
-    // 3) compute unit‐price and multiply by q
-    const unitMin = minPrice / perDrop;
-    const unitMax = maxPrice / perDrop;
-    return [unitMin * q, unitMax * q];
+    const { min, max } = parseGEPrice(d.gePrice);
+    const perDrop = d.qtyPerDrop != null ? d.qtyPerDrop : (d.qtyMin ?? 1);
+    return [(min / perDrop) * q, (max / perDrop) * q];
 }
-// ─── Rendering ────────────────────────────────────────────────────────────────
+// ─── UI Rendering ─────────────────────────────────────────────────────────────
+const simulator = new DropSimulator();
 async function renderAll() {
     let page = bossSelect.value;
     if (!page)
         return;
-    if (page === '__add') {
+    if (page === "__add") {
         const input = prompt("Paste a RSWiki URL, e.g. https://runescape.wiki/w/Woman")?.trim();
         if (!input || !input.startsWith("https://runescape.wiki/w/")) {
             alert("URL must begin with https://runescape.wiki/w/");
@@ -335,117 +334,86 @@ async function renderAll() {
         if (![...bossSelect.options].some(o => o.value === slug)) {
             bossSelect.add(new Option(slug.replace(/_/g, " "), slug), addOpt);
         }
-        page = bossSelect.value = slug;
+        bossSelect.value = slug;
+        page = slug;
     }
     await fetchDrops(page);
     const { normal, wilderness } = bossData[page];
-    // toggles
     const hasW = wilderness.length > 0;
-    wildernessToggleContainer.style.display = hasW ? 'inline-block' : 'none';
+    wildernessToggleContainer.style.display = hasW ? "inline-block" : "none";
     if (!hasW)
         wildernessToggle.checked = false;
     const combined = normal.concat(wilderness);
     const hasSl = combined.some(d => d.rateParts.length > 1);
-    slayerTaskContainer.style.display = hasSl ? 'inline-block' : 'none';
+    slayerTaskContainer.style.display = hasSl ? "inline-block" : "none";
     if (!hasSl)
         slayerTaskToggle.checked = false;
-    // prepare & simulate
     const activeList = normal.concat(wildernessToggle.checked ? wilderness : []);
-    activeDrops = activeList;
-    activeProbs = activeList.map(d => parseRate((d.rateParts.length > 1 && slayerTaskToggle.checked)
-        ? d.rateParts[1]
-        : d.rateParts[0]));
-    triskelionGroup = activeDrops
-        .map((d, i) => /^Crystal[\s_]triskelion[\s_]fragment/i.test(d.name) ? i : -1)
-        .filter(i => i >= 0);
-    prepareAndSimulate(activeList);
-    // render tables
-    const container = document.getElementById('tablesContainer');
-    container.innerHTML = '';
+    simulator.loadDrops(activeList);
+    simulator.simulateBatch(+killsInput.value || 0);
+    renderTables(normal, wilderness);
+    updateUI();
+}
+function renderTables(normal, wilderness) {
+    tablesContainer.innerHTML = "";
     function makeSection(title, items, offset) {
         if (!items.length)
             return;
-        // Section header
-        const h2 = document.createElement('h2');
+        const h2 = document.createElement("h2");
         h2.textContent = title;
-        container.append(h2);
-        // Build table
-        const tbl = document.createElement('table');
-        tbl.setAttribute('data-generated', 'true');
+        tablesContainer.append(h2);
+        const tbl = document.createElement("table");
+        tbl.setAttribute("data-generated", "true");
         tbl.innerHTML = `
-          <thead>
-            <tr><th>Item</th><th>Drop Rate</th><th>GE Price</th><th>Quantity</th></tr>
-          </thead>
-          <tbody></tbody>
-        `;
-        const tbody = tbl.querySelector('tbody');
+      <thead><tr><th>Item</th><th>Drop Rate</th><th>GE Price</th><th>Quantity</th></tr></thead>
+      <tbody></tbody>`;
+        const tbody = tbl.querySelector("tbody");
         items.forEach((d, i) => {
-            // ─── Normalize the drop rate text ────────────────────────────────────────
-            let raw = (d.rateParts.length > 1 && slayerTaskToggle.checked
-                ? d.rateParts[1]
-                : d.rateParts[0])
-                .replace(/\u00A0/g, ' ')
-                .replace(/\s+/g, ' ')
-                .replace(/,/g, '')
-                .replace(/^~/, '')
+            let raw = (d.rateParts.length > 1 && slayerTaskToggle.checked ? d.rateParts[1] : d.rateParts[0])
+                .replace(/\u00A0/g, " ")
+                .replace(/\s+/g, " ")
+                .replace(/,/g, "")
+                .replace(/^~/, "")
                 .trim();
-            // (… your existing percentage/1/N/A×B/C normalization and textual fallbacks …)
-            // ─── Compute badge text ───────────────────────────────────────────────────
             let badge;
-            // 1) fixed‑per‑drop items (charms, forced coins, etc.)
             if (d.qtyPerDrop != null && d.qtyPerDrop > 1) {
                 badge = String(d.qtyPerDrop);
             }
-            // 2) ranged drops
-            else if (d.qtyMin !== undefined &&
-                d.qtyMax !== undefined &&
+            else if (d.qtyMin != null &&
+                d.qtyMax != null &&
                 (d.qtyMin > 1 || d.qtyMax > 1)) {
-                badge = d.qtyMin === d.qtyMax
-                    ? String(d.qtyMin)
-                    : `${d.qtyMin}–${d.qtyMax}`;
+                badge = d.qtyMin === d.qtyMax ? String(d.qtyMin) : `${d.qtyMin}–${d.qtyMax}`;
             }
-            // ─── Build the icon HTML ────────────────────────────────────────────────
-            let iconHtml;
-            if (d.icon) {
-                if (badge) {
-                    iconHtml = `
-                <span class="charm-container">
-                  <img src="${d.icon}" class="drop-icon" alt="${d.name}" />
-                  <span class="charmqty">${badge}</span>
-                </span>`;
-                }
-                else {
-                    iconHtml = `<img src="${d.icon}" class="drop-icon" alt="${d.name}" />`;
-                }
-            }
-            else {
-                iconHtml = d.name;
-            }
-            // ─── Quantity & Tooltip ─────────────────────────────────────────────────
+            const iconHtml = d.icon
+                ? badge
+                    ? `<span class="charm-container"><img src="${d.icon}" class="drop-icon" alt="${d.name}" /><span class="charmqty">${badge}</span></span>`
+                    : `<img src="${d.icon}" class="drop-icon" alt="${d.name}" />`
+                : d.name;
             const idx = offset + i;
-            const qty = currentCounts[idx];
-            const tip = computeTooltip(d, qty);
-            // ─── Assemble row ───────────────────────────────────────────────────────
-            const tr = document.createElement('tr');
+            const qty = simulator.getCounts()[idx];
+            const tip = computeTooltip(simulator.getDrops()[idx], qty);
+            const tr = document.createElement("tr");
             tr.innerHTML = `
-            <td>${iconHtml}</td>
-            <td>${raw}</td>
-            <td>${d.gePrice}</td>
-            <td class="quantity-cell" data-tooltip="${tip}">${qty}</td>
-          `;
+        <td>${iconHtml}</td>
+        <td>${raw}</td>
+        <td>${d.gePrice}</td>
+        <td class="quantity-cell" data-tooltip="${tip}">${qty}</td>`;
             tbody.append(tr);
         });
-        container.append(tbl);
+        tablesContainer.append(tbl);
     }
-    makeSection('Drops', normal, 0);
-    makeSection('Wilderness drop table', wildernessToggle.checked ? wilderness : [], normal.length);
-    // tooltips
-    document.querySelectorAll('td.quantity-cell').forEach(el => {
+    makeSection("Drops", normal, 0);
+    makeSection("Wilderness drop table", wildernessToggle.checked ? wilderness : [], normal.length);
+    document.querySelectorAll("td.quantity-cell").forEach(el => {
         const td = el;
-        td.onmouseenter = () => { tooltip.textContent = td.dataset.tooltip; tooltip.style.display = 'block'; };
-        td.onmouseleave = () => tooltip.style.display = 'none';
+        td.onmouseenter = () => {
+            tooltip.textContent = td.dataset.tooltip;
+            tooltip.style.display = "block";
+        };
+        td.onmouseleave = () => (tooltip.style.display = "none");
         td.onmousemove = (e) => {
-            const off = 12, r = tooltip.getBoundingClientRect();
+            const off = 12;
+            const r = tooltip.getBoundingClientRect();
             let x = e.clientX + off;
             if (x + r.width > window.innerWidth)
                 x = e.clientX - off - r.width;
@@ -453,63 +421,47 @@ async function renderAll() {
             tooltip.style.top = `${e.clientY + off}px`;
         };
     });
-    // initial GE sum
-    updateUI();
 }
-// ─── Update UI ────────────────────────────────────────────────────────────────
 function updateUI() {
-    // update each quantity cell & its tooltip
-    document.querySelectorAll('td.quantity-cell').forEach((el, idx) => {
-        const td = el;
-        const q = currentCounts[idx];
-        // new tooltip signature
-        td.dataset.tooltip = computeTooltip(activeDrops[idx], q);
+    const counts = simulator.getCounts();
+    simulator.getDrops().forEach((d, i) => {
+        const td = document.querySelectorAll("td.quantity-cell")[i];
+        const q = counts[i];
+        td.dataset.tooltip = computeTooltip(d, q);
         td.textContent = String(q);
     });
-    // now sum them up properly
-    let minT = 0, maxT = 0;
-    activeDrops.forEach((d, i) => {
-        const [vmin, vmax] = computeValue(d, currentCounts[i]);
+    let minT = 0;
+    let maxT = 0;
+    simulator.getDrops().forEach((d, i) => {
+        const [vmin, vmax] = computeValue(d, simulator.getCounts()[i]);
         minT += vmin;
         maxT += vmax;
     });
-    // apply Luck of the Dwarves
     if (luckToggle.checked) {
-        minT = Math.round(minT * 1.01);
-        maxT = Math.round(maxT * 1.01);
+        minT = Math.round(minT * LUCK_BUFF_MULT);
+        maxT = Math.round(maxT * LUCK_BUFF_MULT);
     }
-    sumEl.textContent = (minT === maxT)
-        ? `Total GE Value: ${minT.toLocaleString()} coins`
-        : `Total GE Value: ${minT.toLocaleString()}–${maxT.toLocaleString()} coins`;
+    sumEl.textContent =
+        minT === maxT
+            ? `Total GE Value: ${minT.toLocaleString()} coins`
+            : `Total GE Value: ${minT.toLocaleString()}–${maxT.toLocaleString()} coins`;
 }
-// ─── Hooks ───────────────────────────────────────────────────────────────────
-bossSelect.addEventListener('change', () => renderAll());
-document.getElementById('simulate').addEventListener('click', renderAll);
-document.getElementById('autoKillToggle').addEventListener('change', e => {
-    if (autoKillTimer !== null) {
-        clearInterval(autoKillTimer);
-        autoKillTimer = null;
-    }
-    if (e.target.checked) {
-        if (!currentCounts.length)
-            renderAll();
-        autoKillTimer = window.setInterval(() => {
-            killsInput.value = String((+killsInput.value || 0) + 1);
-            simulateOneKill();
-            updateUI();
-        }, 20);
-    }
+// ─── Event Hooks ─────────────────────────────────────────────────────────────
+bossSelect.addEventListener("change", () => renderAll());
+simulateBtn.addEventListener("click", () => renderAll());
+autoKillToggle.addEventListener("change", (e) => {
+    if (e.target.checked)
+        simulator.startAutoKill();
+    else
+        simulator.stopAutoKill();
 });
-document.getElementById('reset').addEventListener('click', () => {
-    if (autoKillTimer !== null) {
-        clearInterval(autoKillTimer);
-        autoKillTimer = null;
-    }
-    killsInput.value = '0';
-    currentCounts = [];
-    document.getElementById('tablesContainer').innerHTML = '';
-    sumEl.textContent = 'Total GE Value: 0 coins';
+resetBtn.addEventListener("click", () => {
+    simulator.stopAutoKill();
+    killsInput.value = "0";
+    simulator.getCounts().fill(0);
+    tablesContainer.innerHTML = "";
+    sumEl.textContent = "Total GE Value: 0 coins";
 });
-slayerTaskToggle.addEventListener('change', renderAll);
-wildernessToggle.addEventListener('change', renderAll);
-luckToggle.addEventListener('change', updateUI);
+slayerTaskToggle.addEventListener("change", () => renderAll());
+wildernessToggle.addEventListener("change", () => renderAll());
+luckToggle.addEventListener("change", () => updateUI());
